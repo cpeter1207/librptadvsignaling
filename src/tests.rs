@@ -263,53 +263,62 @@ fn parallel_boundary_preserves_zero_rx_and_validates_callbacks() {
 
 #[test]
 fn rtx_transport_trace_matches_original_word_and_bit_order() {
-    let state = std::sync::atomic::AtomicBool::new(false);
-    let mut trace = Trace {
-        events: Vec::new(),
-        fail_at: None,
-        writes: 0,
-    };
-    let context = (&mut trace as *mut Trace).cast::<c_void>();
-    assert_eq!(
-        parallel::program_rtx_with_state(
-            &state,
-            parallel::RtxRequest {
-                output: 0xe0,
-                rx_frequency_hz: 146_940_000,
-                tx_frequency_hz: 146_340_000,
-                transmitting: true,
-                high_power: true
-            },
-            context,
-            Some(write),
-            Some(delay)
-        ),
-        0
-    );
-    let mut expected = Vec::new();
-    for (word, first_delay) in [(6_401_u32, 200), (117_032, 4)] {
-        expected.push(Event::Write(0xe0));
-        expected.push(Event::Delay(first_delay));
-        for bit in (0..20).rev() {
-            let data = if word & (1 << bit) != 0 { 0xe2 } else { 0xe0 };
+    for (rx_frequency_hz, tx_frequency_hz, transmitting, reference, synthesizer, final_byte) in [
+        (146_940_000, 146_340_000, false, 6_401, 108_896, 0xe0),
+        (146_940_000, 146_340_000, true, 6_401, 117_032, 0xe8),
+        (444_500_000, 449_500_000, false, 2_563, 135_280, 0xe0),
+    ] {
+        let state = std::sync::atomic::AtomicBool::new(false);
+        let mut trace = Trace {
+            events: Vec::new(),
+            fail_at: None,
+            writes: 0,
+        };
+        let context = (&mut trace as *mut Trace).cast::<c_void>();
+        assert_eq!(
+            parallel::program_rtx_with_state(
+                &state,
+                parallel::RtxRequest {
+                    output: 0xe0,
+                    rx_frequency_hz,
+                    tx_frequency_hz,
+                    transmitting,
+                    high_power: true
+                },
+                context,
+                Some(write),
+                Some(delay)
+            ),
+            0
+        );
+        let mut expected = Vec::new();
+        for (word, first_delay) in [(reference, 200), (synthesizer, 4)] {
+            expected.push(Event::Write(0xe0));
+            expected.push(Event::Delay(first_delay));
+            for bit in (0..20).rev() {
+                let data = if word & (1 << bit) != 0 { 0xe2 } else { 0xe0 };
+                expected.extend([
+                    Event::Write(data),
+                    Event::Delay(1),
+                    Event::Write(data | 1),
+                    Event::Delay(1),
+                    Event::Write(data),
+                    Event::Delay(1),
+                ]);
+            }
             expected.extend([
-                Event::Write(data),
+                Event::Write(0xe0),
+                Event::Write(0xe4),
                 Event::Delay(1),
-                Event::Write(data | 1),
-                Event::Delay(1),
-                Event::Write(data),
-                Event::Delay(1),
+                Event::Write(0xe0),
             ]);
         }
-        expected.extend([
-            Event::Write(0xe0),
-            Event::Write(0xe4),
-            Event::Delay(1),
-            Event::Write(0xe0),
-        ]);
+        expected.push(Event::Write(final_byte));
+        assert_eq!(
+            trace.events, expected,
+            "RTX trace for {rx_frequency_hz} Hz TX={transmitting}"
+        );
     }
-    expected.push(Event::Write(0xe8));
-    assert_eq!(trace.events, expected);
 }
 
 #[test]
