@@ -1,6 +1,13 @@
 use super::*;
 use std::ffi::c_void;
 
+fn new_pulse(api: &SignalingDescriptor) -> *mut pulse::Pulse {
+    let mut pulse = std::ptr::null_mut();
+    assert_eq!((api.create_pulse)(&mut pulse), 0);
+    assert!(!pulse.is_null());
+    pulse
+}
+
 #[derive(Debug, PartialEq)]
 enum Event {
     Write(u8),
@@ -43,9 +50,8 @@ fn shared_signaling_matches_transport_trace() {
         b"rptadv.signaling"
     );
 
-    let pulse = (api.create_pulse)();
-    assert!(!pulse.is_null());
-    assert_eq!((api.publish_timed)(pulse, 1, 10, true), 0);
+    let pulse = new_pulse(api);
+    assert_eq!((api.publish_timed)(pulse, 1, 10, 2), 0);
     assert_eq!((api.evaluate)(pulse, 5_000_000, 0), 1);
     assert_eq!((api.publish_scheduled)(pulse, 0x100, 0, 20), 0);
     assert_eq!((api.evaluate)(pulse, 5_500_000, 0), 0x101);
@@ -92,7 +98,7 @@ fn shared_signaling_matches_transport_trace() {
 #[test]
 fn pulse_publication_replaces_same_bit_but_preserves_disjoint_bit() {
     let api = unsafe { &*rptadv_signaling_descriptor() };
-    let pulse = (api.create_pulse)();
+    let pulse = new_pulse(api);
     assert_eq!((api.publish_scheduled)(pulse, 1, 0, 10), 0);
     assert_eq!((api.publish_scheduled)(pulse, 2, 0, 20), 0);
     assert_eq!((api.evaluate)(pulse, 100, 0), 3);
@@ -161,14 +167,14 @@ fn rtx_program_uses_long_first_delay_and_stops_on_failed_write() {
 #[test]
 fn timed_pulse_preserves_or_xor_cancel_and_observation_deadline() {
     let api = unsafe { &*rptadv_signaling_descriptor() };
-    let pulse = (api.create_pulse)();
-    assert_eq!((api.publish_timed)(pulse, 2, 10, false), 0);
+    let pulse = new_pulse(api);
+    assert_eq!((api.publish_timed)(pulse, 2, 10, 0), 0);
     assert_eq!((api.evaluate)(pulse, 100, 1), 3);
     assert_eq!((api.evaluate)(pulse, 10_000_099, 1), 3);
     assert_eq!((api.evaluate)(pulse, 10_000_100, 1), 1);
-    assert_eq!((api.publish_timed)(pulse, 2, 10, true), 0);
+    assert_eq!((api.publish_timed)(pulse, 2, 10, 1), 0);
     assert_eq!((api.evaluate)(pulse, 11_000_000, 3), 1);
-    assert_eq!((api.publish_timed)(pulse, 0, 0, false), 0);
+    assert_eq!((api.publish_timed)(pulse, 0, 0, 0), 0);
     assert_eq!((api.evaluate)(pulse, 11_000_001, 3), 3);
     (api.destroy_pulse)(pulse);
 }
@@ -176,10 +182,11 @@ fn timed_pulse_preserves_or_xor_cancel_and_observation_deadline() {
 #[test]
 fn pulse_boundary_rejects_bad_publications_without_state_change() {
     let api = unsafe { &*rptadv_signaling_descriptor() };
-    let pulse = (api.create_pulse)();
-    assert_eq!((api.publish_timed)(std::ptr::null(), 1, 10, true), -1);
+    assert_eq!((api.create_pulse)(std::ptr::null_mut()), -1);
+    let pulse = new_pulse(api);
+    assert_eq!((api.publish_timed)(std::ptr::null(), 1, 10, 1), -1);
     assert_eq!((api.publish_scheduled)(std::ptr::null(), 1, 0, 10), -1);
-    assert_eq!((api.publish_timed)(pulse, 1 << 31, 10, true), -1);
+    assert_eq!((api.publish_timed)(pulse, 1 << 31, 10, 1), -1);
     assert_eq!((api.publish_scheduled)(pulse, 1, 1, 10), -1);
     assert_eq!((api.publish_scheduled)(pulse, 1, 0, 0), -1);
     assert_eq!((api.publish_scheduled)(pulse, 0, 1, 10), -1);
@@ -200,17 +207,14 @@ fn parallel_boundary_preserves_zero_rx_and_validates_callbacks() {
     let context = (&mut trace as *mut Trace).cast::<c_void>();
     assert_eq!((api.set_binary_channel)(0, 0, context, None), -1);
     assert_eq!((api.clear_rtx_transmit)(0, context, None), -1);
-    assert_eq!(
-        (api.program_rtx)(0, 0, 0, false, false, context, None, None),
-        0
-    );
+    assert_eq!((api.program_rtx)(0, 0, 0, 0, 0, context, None, None), 0);
     assert_eq!(
         (api.program_rtx)(
             0,
             146_940_000,
             146_340_000,
-            false,
-            false,
+            0,
+            0,
             context,
             None,
             Some(delay)
@@ -222,8 +226,8 @@ fn parallel_boundary_preserves_zero_rx_and_validates_callbacks() {
             0,
             146_940_000,
             146_340_000,
-            false,
-            false,
+            0,
+            0,
             context,
             Some(write),
             None
@@ -249,8 +253,8 @@ fn parallel_boundary_preserves_zero_rx_and_validates_callbacks() {
             0xe0,
             444_500_000,
             449_500_000,
-            false,
-            true,
+            0,
+            2,
             context,
             Some(write),
             Some(delay)
@@ -259,6 +263,22 @@ fn parallel_boundary_preserves_zero_rx_and_validates_callbacks() {
     );
     assert_eq!(trace.writes, 129);
     assert_eq!(trace.events.last(), Some(&Event::Write(0xe0)));
+    trace.events.clear();
+    trace.writes = 0;
+    assert_eq!(
+        (api.program_rtx)(
+            0xe0,
+            146_940_000,
+            146_340_000,
+            2,
+            2,
+            context,
+            Some(write),
+            Some(delay)
+        ),
+        0
+    );
+    assert_eq!(trace.events.last(), Some(&Event::Write(0xe8)));
 }
 
 #[test]

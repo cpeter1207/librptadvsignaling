@@ -25,9 +25,13 @@ int main(void) {
          api->publish_scheduled && api->evaluate && api->set_binary_channel &&
          api->program_rtx && api->clear_rtx_transmit);
 
-  struct rptadv_signaling_pulse *pulse = api->create_pulse();
+  int32_t create_status = api->create_pulse(NULL);
+  assert(create_status == RPTADV_SIGNALING_INVALID_ARGUMENT);
+  struct rptadv_signaling_pulse *pulse = NULL;
+  create_status = api->create_pulse(&pulse);
+  assert(create_status == RPTADV_SIGNALING_OK);
   assert(pulse);
-  assert(api->publish_timed(pulse, 1, 10, true) == RPTADV_SIGNALING_OK);
+  assert(api->publish_timed(pulse, 1, 10, 2) == RPTADV_SIGNALING_OK);
   assert(api->evaluate(pulse, 100, 0) == 1);
   assert(api->evaluate(pulse, 10000100, 0) == 0);
   api->destroy_pulse(pulse);

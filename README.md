@@ -7,6 +7,9 @@ the RTX first-program delay state. A GPIO adapter supplies per-handle elapsed
 monotonic nanoseconds to `evaluate`, and supplies pin-write and delay callbacks
 to parallel operations. The provider does not open hardware devices or read a
 clock. Pulse deadlines begin when the service owner observes a publication.
+The descriptor creates pulse handles through a status return and output
+pointer. Boolean flags cross the C ABI as `uint32_t`, with zero false and
+nonzero true.
 
 This implementation moves pulse publication/evaluation from
 `rptadv-gpio-adapter/src/lib.rs` and binary-channel/RTX sequencing from
