@@ -1,0 +1,10 @@
+prefix=@PREFIX@
+libdir=@LIBDIR@
+includedir=${prefix}/include
+abi_version=@ABI_VERSION@
+
+Name: librptadvsignaling
+Description: Portable GPIO and parallel signaling ABI for rpt_advanced
+Version: @VERSION@
+Libs: -L${libdir} -lrptadvsignaling
+Cflags: -I${includedir}

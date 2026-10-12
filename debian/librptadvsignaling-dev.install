@@ -1,0 +1,3 @@
+usr/include/rptadvsignaling/rptadvsignaling.h
+usr/lib/*/librptadvsignaling.so
+usr/lib/*/pkgconfig/rptadvsignaling.pc
